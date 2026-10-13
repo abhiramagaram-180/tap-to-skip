@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tap-to-Skip</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="hero">
+    <h1>Tap-to-<span>Skip</span></h1>
+    <p class="problem">Hostel students prepay for meals they skip, and the mess cooks for everyone anyway. Tap to skip, cook for the real headcount, share the saving.</p>
+
+    <div class="bigbtns">
+      <a class="bigbtn a" href="student.html">I'm a student</a>
+      <a class="bigbtn b" href="mess.html">Mess view</a>
+    </div>
+
+    <div class="qrbox">
+      <div id="qr"></div>
+      <small>Scan to open the student page</small>
+      <small id="qrUrl"></small>
+    </div>
+    <p class="foot">Team ZeroPlate &middot; CIE Spark 2026, PES University &middot; Demo data, not real students</p>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const studentUrl = new URL("student.html", location.href).href;
+    document.getElementById("qrUrl").textContent = studentUrl;
+    try {
+      new QRCode(document.getElementById("qr"), { text: studentUrl, width: 200, height: 200, colorDark: "#1D2B36", colorLight: "#ffffff" });
+    } catch (e) {
+      document.getElementById("qr").textContent = "(QR library unavailable offline)";
+    }
+    TTS.modeBadge();
+  </script>
+</body>
+</html>

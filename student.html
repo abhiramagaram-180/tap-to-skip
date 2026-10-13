@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tap-to-Skip: Student</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <a href="index.html">&larr;</a>
+    <a class="brand" href="index.html">Tap-to-<span>Skip</span></a>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <label class="lbl" for="who">Who are you? <span class="tag">DEMO DATA</span></label>
+      <select id="who"></select>
+    </section>
+
+    <section class="switchrow" id="demoBox" hidden>
+      <input type="checkbox" id="ignore">
+      <label for="ignore">Demo: ignore cutoffs</label>
+    </section>
+
+    <section class="credit" id="creditBox" hidden>
+      <small>Your credit this month</small>
+      <b id="credit">&#8377;0.00</b>
+      <small id="creditNote"></small>
+    </section>
+
+    <div id="days"></div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="residents.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const whoEl = document.getElementById("who");
+    const ignoreEl = document.getElementById("ignore");
+    let me = null;
+    let skips = [];
+    let ui = []; // {meal, date, btn, count, card}
+    let builtFor = "";
+
+    // name picker
+    const ph = document.createElement("option");
+    ph.value = ""; ph.textContent = "Select your name...";
+    whoEl.appendChild(ph);
+    RESIDENTS.forEach(function (r) {
+      const o = document.createElement("option");
+      o.value = r.id; o.textContent = r.name + " — Room " + r.room;
+      whoEl.appendChild(o);
+    });
+    try {
+      const saved = localStorage.getItem("tts_me");
+      if (saved && RESIDENTS.some(function (r) { return r.id === saved; })) whoEl.value = saved;
+    } catch (e) {}
+    function pickMe() {
+      me = RESIDENTS.find(function (r) { return r.id === whoEl.value; }) || null;
+      try { localStorage.setItem("tts_me", whoEl.value); } catch (e) {}
+      document.getElementById("days").hidden = !me;
+      document.getElementById("creditBox").hidden = !me;
+      refreshUI();
+    }
+    whoEl.addEventListener("change", pickMe);
+
+    if (params.get("demo") === "1") document.getElementById("demoBox").hidden = false;
+    const ignoreCutoffs = function () { return params.get("demo") === "1" && ignoreEl.checked; };
+    ignoreEl.addEventListener("change", refreshUI);
+
+    function mine(meal, date) {
+      return !!me && skips.some(function (s) { return s.resident_id === me.id && s.meal === meal && s.meal_date === date; });
+    }
+
+    function build() {
+      const now = new Date();
+      builtFor = TTS.dateStr(now);
+      const daysEl = document.getElementById("days");
+      daysEl.innerHTML = "";
+      ui = [];
+      [0, 1].forEach(function (off) {
+        const day = TTS.addDays(now, off);
+        const ds = TTS.dateStr(day);
+        const sec = document.createElement("section");
+        sec.className = "day";
+        const h = document.createElement("h2");
+        h.innerHTML = (off === 0 ? "Today" : "Tomorrow") + " <small>" +
+          day.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) + "</small>";
+        sec.appendChild(h);
+        TTS.MEALS.forEach(function (meal) {
+          const card = document.createElement("div");
+          card.className = "card meal";
+          const row = document.createElement("div");
+          row.className = "row";
+          const left = document.createElement("div");
+          const nm = document.createElement("div"); nm.className = "name"; nm.textContent = TTS.MEAL_LABEL[meal];
+          const ct = document.createElement("div"); ct.className = "cut";
+          ct.textContent = "Skip by " + TTS.cutoff(meal, ds).toLocaleString("en-IN", {
+            weekday: "short", hour: "numeric", minute: "2-digit", hour12: true });
+          left.appendChild(nm); left.appendChild(ct);
+          const count = document.createElement("div"); count.className = "count";
+          row.appendChild(left); row.appendChild(count);
+          const btn = document.createElement("button");
+          btn.className = "btn"; btn.type = "button";
+          btn.addEventListener("click", function () { toggle(meal, ds); });
+          card.appendChild(row); card.appendChild(btn);
+          sec.appendChild(card);
+          ui.push({ meal: meal, date: ds, btn: btn, count: count });
+        });
+        daysEl.appendChild(sec);
+      });
+    }
+
+    function locked(meal, date) {
+      return !ignoreCutoffs() && Date.now() >= TTS.cutoff(meal, date).getTime();
+    }
+
+    function refreshUI() {
+      if (TTS.dateStr(new Date()) !== builtFor) build();
+      ui.forEach(function (u) {
+        const isSkipped = mine(u.meal, u.date);
+        const isLocked = locked(u.meal, u.date);
+        const left = TTS.cutoff(u.meal, u.date).getTime() - Date.now();
+        if (isLocked) {
+          u.count.textContent = "Closed";
+          u.count.className = "count";
+          u.btn.textContent = isSkipped ? "Skipped ✓ (locked)" : "Too late to skip";
+        } else {
+          u.count.textContent = (ignoreCutoffs() && left <= 0) ? "Demo: cutoff ignored" : TTS.countdown(left) + " left";
+          u.count.className = "count" + (left < 3600000 && left > 0 ? " urgent" : "");
+          u.btn.textContent = isSkipped ? "Skipping ✓ (tap to undo)" : "Skip this meal";
+        }
+        u.btn.classList.toggle("skipped", isSkipped);
+        u.btn.classList.toggle("locked", isLocked);
+        u.btn.disabled = isLocked || !me;
+      });
+      // credit
+      const prefix = TTS.monthPrefix(new Date());
+      const n = me ? skips.filter(function (s) { return s.resident_id === me.id && s.meal_date.indexOf(prefix) === 0; }).length : 0;
+      document.getElementById("credit").textContent = TTS.inr(n * TTS.CREDIT_PER_SKIP);
+      document.getElementById("creditNote").textContent = n + " skip" + (n === 1 ? "" : "s") + " × " + TTS.inr(TTS.CREDIT_PER_SKIP) + " (applied to next month's bill)";
+    }
+
+    async function reload() {
+      try { skips = await TTS.list(); } catch (e) { TTS.toast("Could not load: " + (e.message || e)); }
+      refreshUI();
+    }
+
+    async function toggle(meal, date) {
+      if (!me || locked(meal, date)) return;
+      const was = mine(meal, date);
+      // optimistic update
+      if (was) {
+        skips = skips.filter(function (s) { return !(s.resident_id === me.id && s.meal === meal && s.meal_date === date); });
+      } else {
+        skips = skips.concat([{ resident_id: me.id, meal: meal, meal_date: date }]);
+      }
+      refreshUI();
+      try {
+        if (was) await TTS.remove(me.id, meal, date); else await TTS.add(me, meal, date);
+      } catch (e) {
+        TTS.toast("Failed: " + (e.message || e));
+      }
+      reload();
+    }
+
+    (async function main() {
+      TTS.modeBadge();
+      try { await TTS.init(); } catch (e) { TTS.toast(e.message); }
+      build();
+      pickMe();
+      await reload();
+      TTS.subscribe(reload);
+      setInterval(refreshUI, 1000);
+    })();
+  </script>
+</body>
+</html>

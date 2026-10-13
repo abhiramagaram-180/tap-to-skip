@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tap-to-Skip: Mess view</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <a href="index.html">&larr;</a>
+    <a class="brand" href="index.html">Tap-to-<span>Skip</span></a>
+    <span class="spacer"></span>
+    <span class="tag">DEMO DATA</span>
+  </header>
+
+  <main class="wrap wide">
+    <div id="days"></div>
+
+    <section class="panel">
+      <h2>Savings this month</h2>
+      <div class="sub">Plates not cooked = skips, at &#8377;25 ingredient cost each.</div>
+      <div><span class="bigsave" id="saved">&#8377;0</span> <span id="plates" style="color:var(--muted)"></span></div>
+      <div class="splitbar">
+        <div class="s1">50%</div><div class="s2">35%</div><div class="s3">15%</div>
+      </div>
+      <div class="legend">
+        <div><b id="sStudents">&#8377;0</b>Students (credit)</div>
+        <div><b id="sMess">&#8377;0</b>Mess</div>
+        <div><b id="sApp">&#8377;0</b>Tap-to-Skip</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Credit ledger</h2>
+      <div class="sub">This month, newest skip first. &#8377;12.50 per skip.</div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Student</th><th>Room</th><th class="num">Skips this month</th><th class="num">Credit</th></tr></thead>
+          <tbody id="ledger"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button class="btn auto" id="seed" type="button">Seed sample week</button>
+      <button class="btn auto danger" id="reset" type="button">Reset demo data</button>
+    </div>
+
+    <p class="foot">&#8377;25 per meal = estimated ingredient cost (IIT Kanpur raw-material cost &#8377;70&ndash;80 per student per day). Demo data.</p>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="residents.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const N = RESIDENTS.length;
+    let skips = [];
+    const lastCook = {};
+
+    function render() {
+      const now = new Date();
+      const daysEl = document.getElementById("days");
+      if (!daysEl.children.length) {
+        [0, 1].forEach(function (off) {
+          const sec = document.createElement("section");
+          sec.className = "day";
+          sec.innerHTML = '<h2></h2><div class="grid3"></div>';
+          daysEl.appendChild(sec);
+        });
+      }
+      [0, 1].forEach(function (off) {
+        const day = TTS.addDays(now, off), ds = TTS.dateStr(day);
+        const sec = daysEl.children[off];
+        sec.querySelector("h2").innerHTML = (off === 0 ? "Today" : "Tomorrow") + " <small>" +
+          day.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" }) + "</small>";
+        const grid = sec.querySelector(".grid3");
+        if (!grid.children.length) {
+          TTS.MEALS.forEach(function (m) {
+            const c = document.createElement("div");
+            c.className = "cookcard";
+            c.innerHTML = '<div class="mname"></div><div class="lab">COOK FOR</div><div class="cook"></div>' +
+              '<div class="sub"><span>Residents <b class="res"></b></span><span>Skips <b class="skips"></b></span></div>' +
+              '<div class="note">(residents &minus; skips) + 5% buffer, rounded up</div>';
+            grid.appendChild(c);
+          });
+        }
+        TTS.MEALS.forEach(function (meal, i) {
+          const c = grid.children[i];
+          const n = skips.filter(function (s) { return s.meal === meal && s.meal_date === ds; }).length;
+          const cook = TTS.cookFor(N, n);
+          c.querySelector(".mname").textContent = TTS.MEAL_LABEL[meal];
+          c.querySelector(".res").textContent = N;
+          c.querySelector(".skips").textContent = n;
+          const el = c.querySelector(".cook");
+          el.textContent = cook;
+          const k = ds + meal;
+          if (lastCook[k] !== undefined && lastCook[k] !== cook) {
+            el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+          }
+          lastCook[k] = cook;
+        });
+      });
+
+      // savings + ledger (this month)
+      const prefix = TTS.monthPrefix(now);
+      const month = skips.filter(function (s) { return s.meal_date.indexOf(prefix) === 0; });
+      const saved = month.length * TTS.COST_PER_MEAL;
+      document.getElementById("saved").textContent = TTS.inr0(saved);
+      document.getElementById("plates").textContent = month.length + " plates × ₹" + TTS.COST_PER_MEAL;
+      document.getElementById("sStudents").textContent = TTS.inr(saved * 0.5);
+      document.getElementById("sMess").textContent = TTS.inr(saved * 0.35);
+      document.getElementById("sApp").textContent = TTS.inr(saved * 0.15);
+
+      const by = {};
+      month.forEach(function (s) {
+        const e = by[s.resident_id] || (by[s.resident_id] = { name: s.resident_name, room: s.room, n: 0, last: "" });
+        e.n++;
+        if ((s.created_at || "") > e.last) e.last = s.created_at || "";
+      });
+      const rows = Object.keys(by).map(function (k) { return by[k]; })
+        .sort(function (a, b) { return a.last < b.last ? 1 : a.last > b.last ? -1 : 0; });
+      const tb = document.getElementById("ledger");
+      tb.innerHTML = "";
+      if (!rows.length) {
+        tb.innerHTML = '<tr><td colspan="4" class="empty">No skips yet this month. Tap "Seed sample week" or skip from the student page.</td></tr>';
+      }
+      rows.forEach(function (r) {
+        const tr = document.createElement("tr");
+        [r.name, r.room, r.n, TTS.inr(r.n * TTS.CREDIT_PER_SKIP)].forEach(function (v, i) {
+          const td = document.createElement("td");
+          td.textContent = v;
+          if (i > 1) td.className = "num";
+          tr.appendChild(td);
+        });
+        tb.appendChild(tr);
+      });
+    }
+
+    async function reload() {
+      try { skips = await TTS.list(); } catch (e) { TTS.toast("Could not load: " + (e.message || e)); }
+      render();
+    }
+
+    document.getElementById("seed").addEventListener("click", async function () {
+      try { const n = await TTS.seedWeek(RESIDENTS); TTS.toast("Seeded " + n + " sample skips"); } catch (e) { TTS.toast("Failed: " + (e.message || e)); }
+      reload();
+    });
+    document.getElementById("reset").addEventListener("click", async function () {
+      if (!confirm("Delete ALL skips and reset the demo data?")) return;
+      try { await TTS.resetAll(); } catch (e) { TTS.toast("Failed: " + (e.message || e)); }
+      reload();
+    });
+
+    (async function main() {
+      TTS.modeBadge();
+      try { await TTS.init(); } catch (e) { TTS.toast(e.message); }
+      await reload();
+      TTS.subscribe(reload);
+      setInterval(render, 60000); // roll over today/tomorrow at midnight
+    })();
+  </script>
+</body>
+</html>
